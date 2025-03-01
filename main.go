@@ -74,19 +74,21 @@ func main() {
 		total, _ := strconv.ParseFloat(row[headers["Total (300)"]], 64)
 		branch, _ := parseBranch(campusID)
 
-		var computedTotal float64 = quiz + midSem + labTest + weeklyLabs + compre
-		if math.Abs(computedTotal-total) > 1e-3 {
-			log.Printf("Mismatch in total for EmpID %s: Computed %f, Found %f", empID, computedTotal, total)
-		}
-
 		// fmt.Printf("%.2f\n", total)
 		students = append(students, Student{studentIndex, classNumber, empID, campusID, quiz, midSem, labTest, weeklyLabs, preCompre, compre, total, branch})
 
 	}
-	// printStudents(students)
-	go computeAverages(students)
-	go computeBranchAverages(students)
-	go computeTopRankings(students)
+
+	mismatchChan := computeMismatch(students)
+	avgChan := computeAverages(students)
+	branchAvgChan := computeBranchAverages(students)
+	topRankingsChan := computeTopRankings(students)
+
+	// Print results as they become available
+	fmt.Println(<-mismatchChan)
+	fmt.Println(<-avgChan)
+	fmt.Println(<-branchAvgChan)
+	fmt.Println(<-topRankingsChan)
 }
 
 func parseBranch(campusID string) (string, error) {
@@ -100,28 +102,49 @@ func parseBranch(campusID string) (string, error) {
 		return "", errors.New("invalid campus ID")
 	}
 }
-func computeAverages(students []Student) {
-	var totalSum, quizSum, midSemSum, labSum, weeklyLabSum, preCompreSum, compreSum float64
-	count := len(students)
 
-	for _, s := range students {
-		totalSum += s.Total
-		quizSum += s.Quiz
-		midSemSum += s.Midsem
-		labSum += s.LabTest
-		weeklyLabSum += s.WeeklyLabs
-		preCompreSum += s.PreCompre
-		compreSum += s.Compre
-	}
+func computeMismatch(students []Student) <-chan string {
+	result := make(chan string)
+	go func() {
+		var mismatch string
+		for _, s := range students {
+			computedTotal := s.Quiz + s.Midsem + s.LabTest + s.WeeklyLabs + s.Compre
+			if math.Abs(computedTotal-s.Total) > 1e-3 {
+				mismatch += fmt.Sprintf("Mismatch in total for Campus ID %s: Computed %f, Found %f\n", s.CampusID, computedTotal, s.Total)
+			}
+		}
+		result <- mismatch
+	}()
+	return result
+}
 
-	fmt.Printf("General Averages:\n")
-	fmt.Printf("Quiz: %.2f\n", float64(quizSum)/float64(count))
-	fmt.Printf("Mid Sem: %.2f\n", float64(midSemSum)/float64(count))
-	fmt.Printf("Lab Test: %.2f\n", float64(labSum)/float64(count))
-	fmt.Printf("Weekly Labs: %.2f\n", float64(weeklyLabSum)/float64(count))
-	fmt.Printf("Pre-Compre: %.2f\n", float64(preCompreSum)/float64(count))
-	fmt.Printf("Compre: %.2f\n", float64(compreSum)/float64(count))
-	fmt.Printf("Overall Average: %.2f\n", float64(totalSum)/float64(count))
+func computeAverages(students []Student) <-chan string {
+	result := make(chan string)
+
+	go func() {
+		var totalSum, quizSum, midSemSum, labSum, weeklyLabSum, preCompreSum, compreSum float64
+		count := len(students)
+
+		for _, s := range students {
+			totalSum += s.Total
+			quizSum += s.Quiz
+			midSemSum += s.Midsem
+			labSum += s.LabTest
+			weeklyLabSum += s.WeeklyLabs
+			preCompreSum += s.PreCompre
+			compreSum += s.Compre
+		}
+
+		result <- fmt.Sprintf("General Averages:\nQuiz: %.2f\nMid Sem: %.2f\nLab Test: %.2f\nWeekly Labs: %.2f\nPre-Compre: %.2f\nCompre: %.2f\nOverall Average: %.2f\n",
+			float64(quizSum)/float64(count),
+			float64(midSemSum)/float64(count),
+			float64(labSum)/float64(count),
+			float64(weeklyLabSum)/float64(count),
+			float64(preCompreSum)/float64(count),
+			float64(compreSum)/float64(count),
+			float64(totalSum)/float64(count))
+	}()
+	return result
 }
 
 // func printStudents(students []Student) {
@@ -130,52 +153,67 @@ func computeAverages(students []Student) {
 // 	}
 // }
 
-func computeBranchAverages(students []Student) {
-	branchTotals := make(map[string]float64)
-	branchCounts := make(map[string]float64)
+func computeBranchAverages(students []Student) <-chan string {
+	result := make(chan string)
+	go func() {
+		branchTotals := make(map[string]float64)
+		branchCounts := make(map[string]float64)
 
-	for _, s := range students {
-		if len(s.Branch) == 2 {
-			branchTotals[s.Branch] += s.Total
-			branchCounts[s.Branch]++
+		for _, s := range students {
+			if len(s.Branch) == 2 {
+				branchTotals[s.Branch] += s.Total
+				branchCounts[s.Branch]++
+			}
 		}
-	}
 
-	fmt.Println("\nBranch-wise Averages for 2024 batch:")
-	for branch, sum := range branchTotals {
-		fmt.Printf("%s: %.2f\n", branch, float64(sum)/float64(branchCounts[branch]))
-	}
+		var output string
+		output += "\nBranch-wise Averages for 2024 batch:\n"
+		for branch, sum := range branchTotals {
+			output += fmt.Sprintf("%s: %.2f\n", branch, float64(sum)/float64(branchCounts[branch]))
+		}
+		result <- output
+	}()
+	return result
 }
 
-func computeTopRankings(students []Student) {
-	categories := map[string]func(Student) float64{
-		"Quiz":       func(s Student) float64 { return s.Quiz },
-		"MidSem":     func(s Student) float64 { return s.Midsem },
-		"LabTest":    func(s Student) float64 { return s.LabTest },
-		"WeeklyLabs": func(s Student) float64 { return s.WeeklyLabs },
-		"PreCompre":  func(s Student) float64 { return s.PreCompre },
-		"Compre":     func(s Student) float64 { return s.Compre },
-	}
+func computeTopRankings(students []Student) <-chan string {
 
-	for category, getMarks := range categories {
-		sort.Slice(students, func(i, j int) bool {
-			if getMarks(students[i]) == getMarks(students[j]) {
-				return students[i].CampusID < students[j].CampusID
-			}
-			return getMarks(students[i]) > getMarks(students[j])
-		})
-
-		fmt.Printf("\nTop 3 Students in %s:\n", category)
-		var rank int = 1
-		prevMarks := -1.0
-		for i := 0; i < 3 && i < len(students); i++ {
-			marks := getMarks(students[i])
-
-			if marks > prevMarks {
-				rank = i + 1
-			}
-			fmt.Printf("%d. Campus ID: %s, Marks: %.2f\n", rank, students[i].CampusID, marks)
-			prevMarks = marks
+	result := make(chan string)
+	go func() {
+		var output string
+		studentsCopy := make([]Student, len(students))
+		copy(studentsCopy, students)
+		categories := map[string]func(Student) float64{
+			"Quiz":       func(s Student) float64 { return s.Quiz },
+			"MidSem":     func(s Student) float64 { return s.Midsem },
+			"LabTest":    func(s Student) float64 { return s.LabTest },
+			"WeeklyLabs": func(s Student) float64 { return s.WeeklyLabs },
+			"PreCompre":  func(s Student) float64 { return s.PreCompre },
+			"Compre":     func(s Student) float64 { return s.Compre },
 		}
-	}
+
+		for category, getMarks := range categories {
+			sort.Slice(studentsCopy, func(i, j int) bool {
+				if getMarks(studentsCopy[i]) == getMarks(studentsCopy[j]) {
+					return studentsCopy[i].CampusID < studentsCopy[j].CampusID
+				}
+				return getMarks(studentsCopy[i]) > getMarks(studentsCopy[j])
+			})
+
+			output += fmt.Sprintf("\nTop 3 Students in %s:\n", category)
+			var rank int = 1
+			prevMarks := -1.0
+			for i := 0; i < 3 && i < len(studentsCopy); i++ {
+				marks := getMarks(studentsCopy[i])
+
+				if marks > prevMarks {
+					rank = i + 1
+				}
+				output += fmt.Sprintf("%d. Campus ID: %s, Marks: %.2f\n", rank, studentsCopy[i].CampusID, marks)
+				prevMarks = marks
+			}
+		}
+		result <- output
+	}()
+	return result
 }
