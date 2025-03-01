@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -81,4 +82,31 @@ func main() {
 
 	}
 
+	computeAverages(students)
+
+}
+
+func computeAverages(students []Student) {
+	var totalSum, quizSum, midSemSum, labSum, weeklyLabSum, preCompreSum, compreSum float64
+	count := len(students)
+
+	for _, s := range students {
+		totalSum += s.Total
+		quizSum += s.Quiz
+		midSemSum += s.MidSem
+		labSum += s.LabTest
+		weeklyLabSum += s.WeeklyLabs
+		preCompreSum += s.PreCompre
+		compreSum += s.Compre
+	}
+
+	fmt.Printf("General Averages:\n")
+	fmt.Printf("Quiz: %.2f\n", float64(quizSum)/float64(count))
+	fmt.Printf("Mid Sem: %.2f\n", float64(midSemSum)/float64(count))
+	fmt.Printf("Lab Test: %.2f\n", float64(labSum)/float64(count))
+	fmt.Printf("Weekly Labs: %.2f\n", float64(weeklyLabSum)/float64(count))
+	fmt.Printf("Pre-Compre: %.2f\n", float64(preCompreSum)/float64(count))
+	fmt.Printf("Compre: %.2f\n", float64(compreSum)/float64(count))
+	fmt.Printf("Overall Average: %.2f\n", float64(totalSum)/float64(count))
+	fmt.Printf("Count: %d\n", count)
 }
